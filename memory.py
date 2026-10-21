@@ -76,3 +76,7 @@ class Memory:
             query_texts=[query],
             n_results=min(limit, count)
         )
+        return results['documents'][0] if results['documents'] else []
+
+    def get_memory_count(self):
+        return self.collection.count()
