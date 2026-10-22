@@ -1,0 +1,17 @@
+# Core STT & Audio I/O
+faster-whisper>=1.0.0
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14
+sounddevice>=0.4.6
+soundfile>=0.12.1
+scipy>=1.11.0
+numpy>=1.24.0
+
+# Local LLM Integration
+ollama>=0.3.0
+
+# Zero-Shot Voice Cloning & Text-to-Speech
+coqui-tts>=0.22.0
+
+# Persistent Vector Memory
+chromadb>=0.4.0
