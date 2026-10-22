@@ -1,125 +1,122 @@
 import os
 import sys
+import numpy as np
+import sounddevice as sd
+import scipy.io.wavfile as wav
+import config
 
-# Configure Windows DLL directories for PyTorch CUDA, cuBLAS, and cuDNN
-if sys.platform == "win32":
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    os.environ["CT2_VERBOSE"] = "0"
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
+# Windows console encoding and DLL helpers
+if hasattr(sys.stdout, "reconfigure"):
     try:
-        import torch
-        torch_lib = os.path.join(os.path.dirname(torch.__file__), "lib")
-        if os.path.exists(torch_lib):
-            os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
-            if hasattr(os, "add_dll_directory"):
-                os.add_dll_directory(torch_lib)
+        sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
-os.environ["COQUI_TOS_AGREED"] = "1"
-import queue
-import sounddevice as sd
-import numpy as np
-import scipy.io.wavfile as wav
-from faster_whisper import WhisperModel
-import torch
-
-# class Ear:
-#     def __init__(self, model_size="base"):
-#         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-#         self.compute_type = "float16" if self.device == "cuda" else "int8"
-        
-#         print(f"Loading Faster-Whisper ({model_size}) on: {self.device.upper()}...")
-#         # 'base' model is tiny, ultra-fast (~150ms), and great for conversation
-#         self.model = WhisperModel(model_size, device=self.device, compute_type=self.compute_type)
-#         print("Ear initialized successfully!")
-
-#     def record_audio(self, filename="audio/input.wav", duration=5, sample_rate=16000):
-#         """Records from the microphone for a set duration."""
-#         os.makedirs("audio", exist_ok=True)
-#         print("\n🎤 Listening... (Speak now)")
-        
-#         # Record audio from default microphone
-#         audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16')
-#         sd.wait() # Wait until recording is done
-        
-#         print("Recording finished. Transcribing...")
-#         wav.write(filename, sample_rate, audio_data)
-#         return filename
-
-#     def listen_and_transcribe(self, duration=5) -> str:
-#         """Records user speech and transcribes it into text with auto language detection."""
-#         audio_path = self.record_audio(duration=duration)
-
-#         # Guide Whisper to understand Indian slang & Tanglish in English letters
-#         tanglish_hint = "Machi, bro, enna aachu, romba tired, sapdiya, pathukalam, tension aagadha"
-
-#         segments, info = self.model.transcribe(
-#             audio_path, 
-#             beam_size=5,
-#             initial_prompt=tanglish_hint
-#         )
-        
-#         transcribed_text = " ".join([segment.text for segment in segments]).strip()
-        
-#         if transcribed_text:
-#             print(f"You said: \"{transcribed_text}\"")
-#         else:
-#             print("No speech detected.")
-
-#         return transcribed_text
-
-
-
-
-
-# if __name__ == "__main__":
-#     # Test script standalone
-#     ear = Ear(model_size="base")
-    
-#     print("\n--- Testing Ear Module ---")
-#     input("Press ENTER when you are ready to speak for 5 seconds...")
-    
-#     result = ear.listen_and_transcribe(duration=5)
-#     print(f"\nFinal Result: {result}")
-
-import speech_recognition as sr
+if sys.platform == "win32":
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    os.environ["CT2_VERBOSE"] = "0"
 
 class Ear:
-    def __init__(self):
-        self.recognizer = sr.Recognizer()
-        # Adjust sensitivity for room noise
-        self.recognizer.energy_threshold = 300
-        self.recognizer.dynamic_energy_threshold = True
-        print("Ear initialized successfully (No cuDNN needed)!")
+    def __init__(self, engine: str = None, model_size: str = None):
+        self.engine = engine or config.STT_ENGINE
+        self.model_size = model_size or config.WHISPER_MODEL_SIZE
+        self.tanglish_hint = config.TANGLISH_HINT
+        self.audio_dir = config.AUDIO_DIR
+        os.makedirs(self.audio_dir, exist_ok=True)
+        self.input_wav = os.path.join(self.audio_dir, "input.wav")
 
-    def listen_and_transcribe(self, duration=5) -> str:
-        """Listens from the laptop mic and converts speech to text."""
-        with sr.Microphone() as source:
-            print("\n🎤 Listening... Speak now (English/Tanglish)...")
-            self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        self.whisper_model = None
+        self.recognizer = None
+
+        if self.engine == "whisper":
+            self._init_whisper()
+
+        # If whisper fails or google was selected, init speech_recognition
+        if self.whisper_model is None:
+            self._init_google()
+
+    def _init_whisper(self):
+        """Initializes Faster-Whisper on CPU int8 to save RTX 3050 VRAM and avoid cuDNN conflicts."""
+        try:
+            from faster_whisper import WhisperModel
+            print(f"[Ear] Loading Faster-Whisper ({self.model_size}) on CPU (int8)...")
+            self.whisper_model = WhisperModel(
+                self.model_size,
+                device=config.WHISPER_DEVICE,
+                compute_type=config.WHISPER_COMPUTE_TYPE
+            )
+            print("[Ear] Initialized with Faster-Whisper (Tanglish optimized)!")
+        except Exception as e:
+            print(f"[Warning] Faster-Whisper initialization failed ({e}). Falling back to Google STT...")
+            self.whisper_model = None
+
+    def _init_google(self):
+        """Initializes speech_recognition as a resilient fallback."""
+        try:
+            import speech_recognition as sr
+            self.recognizer = sr.Recognizer()
+            self.recognizer.energy_threshold = 300
+            self.recognizer.dynamic_energy_threshold = True
+            print("[Ear] Initialized with Google STT engine.")
+        except Exception as e:
+            print(f"[Warning] Failed to initialize SpeechRecognition: {e}")
+
+    def record_audio(self, duration: int = None, sample_rate: int = 16000) -> str:
+        """Records from the default microphone for a set duration."""
+        duration = duration or config.LISTEN_DURATION
+        print(f"\n[Ear] Listening... (Speak now for up to {duration}s)")
+        audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16')
+        sd.wait()
+        wav.write(self.input_wav, sample_rate, audio_data)
+        return self.input_wav
+
+    def listen_and_transcribe(self, duration: int = None) -> str:
+        """Records and transcribes user speech using Whisper or Google STT."""
+        duration = duration or config.LISTEN_DURATION
+
+        # 1. Primary: Faster-Whisper with Tanglish initial prompt
+        if self.whisper_model is not None:
             try:
-                # Listens until you stop speaking
-                audio = self.recognizer.listen(source, timeout=duration, phrase_time_limit=8)
-                print("Processing speech...")
-                
-                # Transcribes using Google's engine (free, no API key needed)
-                text = self.recognizer.recognize_google(audio, language="en-IN")
-                print(f"You said: \"{text}\"")
-                return text
-            except sr.WaitTimeoutError:
-                print("No speech detected within time limit.")
-                return ""
-            except sr.UnknownValueError:
-                print("Couldn't understand the audio clearly.")
-                return ""
+                audio_path = self.record_audio(duration=duration)
+                print("[Ear] Processing speech...")
+                segments, info = self.whisper_model.transcribe(
+                    audio_path,
+                    beam_size=5,
+                    initial_prompt=self.tanglish_hint,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500)
+                )
+                transcribed = " ".join([segment.text for segment in segments]).strip()
+                if transcribed:
+                    print(f"You said: \"{transcribed}\"")
+                else:
+                    print("No speech detected.")
+                return transcribed
             except Exception as e:
-                print(f"Ear Error: {e}")
-                return ""
+                print(f"[Warning] Whisper error ({e}), trying fallback...")
+
+        # 2. Fallback: Google Speech Recognition
+        if self.recognizer is not None:
+            import speech_recognition as sr
+            with sr.Microphone() as source:
+                print("\n[Ear] Listening... Speak now...")
+                try:
+                    audio = self.recognizer.listen(source, timeout=duration, phrase_time_limit=config.PHRASE_TIME_LIMIT)
+                    print("[Ear] Processing speech...")
+                    text = self.recognizer.recognize_google(audio, language="en-IN")
+                    print(f"You said: \"{text}\"")
+                    return text
+                except sr.WaitTimeoutError:
+                    print("No speech detected within time limit.")
+                    return ""
+                except sr.UnknownValueError:
+                    print("Couldn't understand the audio clearly.")
+                    return ""
+                except Exception as e:
+                    print(f"[Ear Error]: {e}")
+                    return ""
+
+        return ""
 
 if __name__ == "__main__":
     ear = Ear()
