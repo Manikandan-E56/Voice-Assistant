@@ -19,6 +19,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 # Disable cuDNN to prevent Windows DLL / status mismatch errors on RTX 3050 Laptop GPU
 torch.backends.cudnn.enabled = False
 
+
 class Mouth:
     def __init__(self, voice_sample_path: str = None):
         self.voice_sample = voice_sample_path or config.DEFAULT_VOICE_SAMPLE
