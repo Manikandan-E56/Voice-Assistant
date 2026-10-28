@@ -128,7 +128,7 @@ Voice-Assistant/
 │   ├── facts.db                # SQLite key-value facts database
 │   └── chroma_store/           # ChromaDB vector collection directory
 ├── voice_samples/              # Voice samples for XTTS cloning (.wav)
-│   ├── Induja_Voice.wav        # Default female voice reference
+│   ├── Own_Voice.wav        # Default female voice reference
 │   ├── Voice.wav               # Alternate voice sample
 │   └── my_voice.wav            # Custom voice sample
 ├── brain.py                    # Ollama LLM integration & streaming sentence parser
