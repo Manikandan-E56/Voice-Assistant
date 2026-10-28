@@ -205,13 +205,13 @@ Place your reference voice sample (`.wav` format, 6–20 seconds of clear, noise
 
 ```text
 voice_samples/
-├── Induja_Voice.wav    # (Preferred default)
+├── Own_Voice.wav    # (Preferred default)
 └── my_voice.wav        # (Or your own reference sample)
 ```
 
 The system automatically resolves the voice sample in the following order:
-1. `voice_samples/Induja_Voice.wav`
-2. `voice_samples/induja_Voice.wav`
+1. `voice_samples/Own_Voice.wav`
+2. `voice_samples/own_Voice.wav`
 3. `voice_samples/my_voice.wav`
 4. Any `.wav` file located in `voice_samples/`
 
